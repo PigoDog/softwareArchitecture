@@ -1,0 +1,159 @@
+@startuml classes
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+hide circle
+
+title Диаграмма классов — Автомойка (Вариант 13)
+
+enum RequestStatus {
+  WAITING
+  IN_SERVICE
+  REJECTED
+  COMPLETED
+}
+
+enum DeviceStatus {
+  FREE
+  BUSY
+}
+
+class Source {
+  - id: int
+  - priority: int
+  - intervalMin: double
+  - intervalMax: double
+  --
+  + generateNextArrival() : double
+  + createRequest() : Request
+  + getPriority() : int
+}
+
+class Request {
+  - id: int
+  - sourceId: int
+  - sourcePriority: int
+  - arrivalTime: double
+  - status: RequestStatus
+  - bufferSlotIndex: int
+  --
+  + getPriority() : int
+  + getArrivalTime() : double
+  + setStatus(status: RequestStatus) : void
+}
+
+class Buffer {
+  - capacity: int
+  - slots: Request[]
+  --
+  + hasFreeSlot() : boolean
+  + isFull() : boolean
+  + placeRequest(request: Request) : boolean
+  + removeRequest(request: Request) : void
+  + getWaitingBySource(priority: int) : Request[]
+}
+
+class Device {
+  - id: int
+  - status: DeviceStatus
+  - currentRequest: Request
+  --
+  + isFree() : boolean
+  + startService(request: Request) : void
+  + completeService() : void
+  + getId() : int
+}
+
+class DispatcherPostanovki {
+  - buffer: Buffer
+  - devices: Device[]
+  --
+  + onRequestArrived(request: Request) : void
+  - findFreeDeviceByNumber() : Device
+  - handleOverflow(request: Request) : void
+}
+
+class DispatcherVybora {
+  - buffer: Buffer
+  --
+  + onDeviceFreed(device: Device) : void
+  - selectBySourcePriority() : Request
+}
+
+class EventCalendar {
+  - events: Event[]
+  --
+  + logEvent(time: double, description: String) : void
+  + printCalendar() : void
+}
+
+class Event {
+  - time: double
+  - type: String
+  - description: String
+}
+
+class StatisticsReport {
+  - totalArrived: int
+  - totalServed: int
+  - totalRejected: int
+  - totalWaitTime: double
+  --
+  + recordArrival() : void
+  + recordRejection() : void
+  + recordServiceCompletion(waitTime: double) : void
+  + printReport() : void
+}
+
+class SimulationController {
+  - sources: Source[]
+  - buffer: Buffer
+  - devices: Device[]
+  - dispatcherPostanovki: DispatcherPostanovki
+  - dispatcherVybora: DispatcherVybora
+  - calendar: EventCalendar
+  - statistics: StatisticsReport
+  --
+  + run(simulationTime: double) : void
+}
+
+SimulationController "1" *-- "1..*" Source
+SimulationController "1" *-- "1" Buffer
+SimulationController "1" *-- "1..*" Device
+SimulationController "1" *-- "1" DispatcherPostanovki
+SimulationController "1" *-- "1" DispatcherVybora
+SimulationController "1" *-- "1" EventCalendar
+SimulationController "1" *-- "1" StatisticsReport
+
+DispatcherPostanovki "1" o-- "1" Buffer : -buffer
+DispatcherPostanovki "1" o-- "1..*" Device : -devices
+DispatcherVybora "1" o-- "1" Buffer : -buffer
+
+Buffer "1" o-- "0..N" Request : -slots
+Device "1" o-- "0..1" Request : -currentRequest
+Source ..> Request : <<create>>
+EventCalendar "1" *-- "0..*" Event : -events
+
+Request -- RequestStatus
+Device -- DeviceStatus
+
+note right of DispatcherPostanovki
+  Д2П1: ищет свободный прибор,
+  перебирая номера с начала.
+  Д10О5: если буфер полон —
+  новая заявка получает отказ.
+end note
+
+note right of Buffer
+  Д10З3: заявка занимает первое
+  свободное место с начала;
+  при освобождении места
+  остальные не сдвигаются.
+end note
+
+note right of DispatcherVybora
+  Д2Б4: выбирает заявки по
+  приоритету источника, по одной
+  за раз (при освобождении прибора).
+end note
+
+@enduml

@@ -1,0 +1,92 @@
+@startuml sequence
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 180
+title Sequence — Автомойка (Вариант 13): единый сценарий с альтернативами
+
+actor "Источник" as Src
+participant "ДиспетчерПостановки" as DP
+participant "Буфер" as Buf
+participant "Бокс (Прибор)" as Dev
+participant "ДиспетчерВыбора" as DV
+participant "СтатистикаОтчёт" as Stat
+participant "КалендарьСобытий" as Cal
+
+== Генерация заявки (ИБ, ИЗ2) ==
+Src -> Src : ждать interval ~ Uniform(min,max) (ИЗ2)
+Src -> DP : onRequestArrived(request)
+DP -> Cal : logEvent("Заявка прибыла", request)
+
+== HappyFlow: прибор свободен (Д2П1) ==
+DP -> Dev : findFreeDeviceByNumber()
+note right of DP
+  Д2П1: перебор боксов по номеру,
+  начиная с самого приоритетного
+end note
+alt Есть свободный бокс
+  Dev --> DP : device (free)
+  DP -> Dev : startService(request)
+  activate Dev
+  Dev -> Dev : serviceTime ~ Exp(λ) (ПЗ1)
+  Dev --> DP : Response: заявка принята на обслуживание
+  DP -> Stat : recordArrival()
+  DP -> Cal : logEvent("Заявка на боксе", device.id)
+
+else Все боксы заняты -> проверка буфера (Д10З3 / Д10О5)
+  Dev --> DP : Response: свободных боксов нет
+  DP -> Buf : hasFreeSlot()
+
+  alt В буфере есть свободное место
+    Buf --> DP : Response: true (слот найден)
+    DP -> Buf : placeRequest(request)
+    note right of Buf
+      Д1ОЗ3: заявка занимает первое
+      свободное место с начала;
+      при освобождении мест очередь
+      не сдвигается
+    end note
+    Buf --> DP : Response: заявка поставлена в буфер
+    DP -> Stat : recordArrival()
+    DP -> Cal : logEvent("Заявка в буфере", request)
+
+    == Ожидание освобождения прибора ==
+    loop пока нет свободного бокса
+      Dev -> Dev : обслуживать текущую заявку (ПЗ1)
+    end
+    Dev -> DV : onDeviceFreed(device)  << триггер: завершение мойки >>
+    activate DV
+    DV -> Buf : getWaitingBySource(priority)
+    note right of DV
+      Д2Б4: выбор заявки по приоритету
+      источника, по одной за раз
+    end note
+    Buf --> DV : Response: список ожидающих по приоритету
+
+    alt В буфере есть ожидающие заявки
+      DV -> DV : selectBySourcePriority()
+      DV -> Buf : removeRequest(selectedRequest)
+      Buf --> DV : Response: заявка удалена из буфера
+      DV -> Dev : startService(selectedRequest)
+      Dev -> Dev : serviceTime ~ Exp(λ) (ПЗ1)
+      Dev --> DV : Response: заявка принята на обслуживание
+      DV -> Stat : recordServiceCompletion(waitTime)
+      DV -> Cal : logEvent("Заявка выбрана из буфера", selectedRequest)
+    else Буфер пуст
+      Buf --> DV : Response: нет ожидающих заявок
+      DV -> Cal : logEvent("Бокс простаивает", device.id)
+    end
+    deactivate DV
+
+  else Буфер переполнен (Д1ОО5)
+    Buf --> DP : Response: false (мест нет)
+    DP -> Stat : recordRejection()
+    DP -> Cal : logEvent("Отказ: буфер переполнен", request)
+    note right of DP #F8D7D7
+      Д1ОО5: новая заявка получает
+      отказ и покидает систему,
+      состояние буфера не меняется
+    end note
+  end
+end
+deactivate Dev
+
+@enduml
