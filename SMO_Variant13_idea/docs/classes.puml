@@ -1,0 +1,196 @@
+@startuml classes
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+hide circle
+
+title Диаграмма классов — Автомойка (Вариант 13)
+
+enum RequestStatus {
+  WAITING
+  IN_SERVICE
+  REJECTED
+  COMPLETED
+}
+
+enum DeviceStatus {
+  FREE
+  BUSY
+}
+
+class Source {
+  - id: int
+  - priority: int
+  - intervalMin: double
+  - intervalMax: double
+  - generated: int
+  - rng: Random
+  --
+  + generateNextArrival() : double
+  + createRequest(now: double) : Request
+  + getId() : int
+  + getPriority() : int
+}
+
+class Request {
+  - id: int
+  - sourceId: int
+  - sourcePriority: int
+  - arrivalTime: double
+  - status: RequestStatus
+  - bufferSlotIndex: int
+  --
+  + getId() : int
+  + getSourceId() : int
+  + getPriority() : int
+  + getArrivalTime() : double
+  + getStatus() : RequestStatus
+  + setStatus(status: RequestStatus) : void
+  + getBufferSlotIndex() : int
+  + setBufferSlotIndex(index: int) : void
+  + label() : String
+}
+
+class Buffer {
+  - capacity: int
+  - slots: Request[]
+  --
+  + hasFreeSlot() : boolean
+  + isFull() : boolean
+  + placeRequest(request: Request) : boolean
+  + removeRequest(request: Request) : void
+  + getWaitingBySource(priority: int) : List<Request>
+  + describe() : String
+}
+
+class Device {
+  - id: int
+  - meanServiceTime: double
+  - rng: Random
+  - status: DeviceStatus
+  - currentRequest: Request
+  - startTime: double
+  - finishTime: double
+  - busyTime: double
+  --
+  + isFree() : boolean
+  + startService(request: Request, now: double) : void
+  + completeService() : Request
+  + getId() : int
+  + getFinishTime() : double
+  + getBusyTime(now: double) : double
+  + describe() : String
+}
+
+class DispatcherPostanovki {
+  - buffer: Buffer
+  - devices: Device[]
+  - statistics: StatisticsReport
+  - calendar: EventCalendar
+  --
+  + onRequestArrived(request: Request, now: double) : void
+  - findFreeDeviceByNumber() : Device
+  - handleOverflow(request: Request, now: double) : void
+}
+
+class DispatcherVybora {
+  - buffer: Buffer
+  - statistics: StatisticsReport
+  - calendar: EventCalendar
+  - sourceCount: int
+  --
+  + onDeviceFreed(device: Device, now: double) : void
+  - selectBySourcePriority() : Request
+}
+
+class EventCalendar {
+  - events: PriorityQueue<Event>
+  - journal: String[]
+  --
+  + schedule(event: Event) : void
+  + pollNext() : Event
+  + logEvent(time: double, description: String) : void
+  + printJournal() : void
+  + printCalendar() : void
+}
+
+class Event {
+  - time: double
+  - type: String
+  - targetId: int
+  - description: String
+  --
+  + compareTo(other: Event) : int
+}
+
+class StatisticsReport {
+  - totalArrived: int
+  - totalServed: int
+  - totalRejected: int
+  - totalWaitTime: double
+  --
+  + recordArrival() : void
+  + recordRejection() : void
+  + recordServiceCompletion(waitTime: double) : void
+  + printReport(totalTime: double, devices: Device[]) : void
+}
+
+class SimulationController {
+  - sources: Source[]
+  - buffer: Buffer
+  - devices: Device[]
+  - dispatcherPostanovki: DispatcherPostanovki
+  - dispatcherVybora: DispatcherVybora
+  - calendar: EventCalendar
+  - statistics: StatisticsReport
+  - stepMode: boolean
+  --
+  + run(simulationTime: double) : void
+  - scheduleArrival(source: Source, now: double) : void
+  - printState(now: double) : void
+}
+
+SimulationController "1" *-- "1..*" Source
+SimulationController "1" *-- "1" Buffer
+SimulationController "1" *-- "1..*" Device
+SimulationController "1" *-- "1" DispatcherPostanovki
+SimulationController "1" *-- "1" DispatcherVybora
+SimulationController "1" *-- "1" EventCalendar
+SimulationController "1" *-- "1" StatisticsReport
+
+DispatcherPostanovki "1" o-- "1" Buffer : -buffer
+DispatcherPostanovki "1" o-- "1..*" Device : -devices
+DispatcherVybora "1" o-- "1" Buffer : -buffer
+DispatcherPostanovki "1" o-- "1" StatisticsReport : -statistics
+DispatcherPostanovki "1" o-- "1" EventCalendar : -calendar
+DispatcherVybora "1" o-- "1" StatisticsReport : -statistics
+DispatcherVybora "1" o-- "1" EventCalendar : -calendar
+
+Buffer "1" o-- "0..N" Request : -slots
+Device "1" o-- "0..1" Request : -currentRequest
+Source ..> Request : <<create>>
+EventCalendar "1" *-- "0..*" Event : -events
+
+Request -- RequestStatus
+Device -- DeviceStatus
+
+note right of DispatcherPostanovki
+  Д2П1: ищет свободный прибор,
+  перебирая номера с начала.
+  Д10О5: если буфер полон —
+  новая заявка получает отказ.
+end note
+
+note right of Buffer
+  Д10З3: заявка занимает первое
+  свободное место с начала;
+  при освобождении места
+  остальные не сдвигаются.
+end note
+
+note right of DispatcherVybora
+  Д2Б4: выбирает заявки по
+  приоритету источника, по одной
+  за раз (при освобождении прибора).
+end note
+
+@enduml
